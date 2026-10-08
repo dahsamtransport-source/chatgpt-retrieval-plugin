@@ -1,7 +1,7 @@
-import os
 from io import BufferedReader
 from typing import Optional
 from fastapi import UploadFile
+from starlette.concurrency import run_in_threadpool
 import mimetypes
 from PyPDF2 import PdfReader
 import docx2txt
@@ -49,7 +49,7 @@ def extract_text_from_file(file: BufferedReader, mimetype: str) -> str:
     if mimetype == "application/pdf":
         # Extract text from pdf using PyPDF2
         reader = PdfReader(file)
-        extracted_text = " ".join([page.extract_text() for page in reader.pages])
+        extracted_text = " ".join(page.extract_text() or "" for page in reader.pages)
     elif mimetype == "text/plain" or mimetype == "text/markdown":
         # Read text from plain text file
         extracted_text = file.read().decode("utf-8")
@@ -89,29 +89,8 @@ def extract_text_from_file(file: BufferedReader, mimetype: str) -> str:
 
 # Extract text from a file based on its mimetype
 async def extract_text_from_form_file(file: UploadFile):
-    """Return the text content of a file."""
-    # get the file body from the upload file object
-    mimetype = file.content_type
-    logger.info(f"mimetype: {mimetype}")
-    logger.info(f"file.file: {file.file}")
-    logger.info("file: ", file)
-
-    file_stream = await file.read()
-
-    temp_file_path = "/tmp/temp_file"
-
-    # write the file to a temporary location
-    with open(temp_file_path, "wb") as f:
-        f.write(file_stream)
-
-    try:
-        extracted_text = extract_text_from_filepath(temp_file_path, mimetype)
-    except Exception as e:
-        logger.error(e)
-        os.remove(temp_file_path)
-        raise e
-
-    # remove file from temp location
-    os.remove(temp_file_path)
-
-    return extracted_text
+    """Parse the request-owned spool without sharing a pathname across workers."""
+    await file.seek(0)
+    # Parsers are synchronous; keep them off the event loop. UploadFile owns and
+    # closes its spool, including when parsing fails. Never log document content.
+    return await run_in_threadpool(extract_text_from_file, file.file, file.content_type)
