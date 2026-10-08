@@ -17,6 +17,7 @@ from uuid import uuid4
 
 
 from services.date import to_unix_timestamp
+from services.milvus_filters import metadata_expression, primary_key_literal, string_literal
 from datastore.datastore import DataStore
 from models.models import (
     DocumentChunk,
@@ -514,14 +515,11 @@ class MilvusDataStore(DataStore):
             # in future version we can delete by expression
             if (ids is not None) and len(ids) > 0:
                 # Add quotation marks around the string format id
-                ids = ['"' + str(id) + '"' for id in ids]
+                ids = [string_literal(id) for id in ids]
                 # Query for the pk's of entries that match id's
                 ids = self.col.query(f"document_id in [{','.join(ids)}]")
                 # Convert to list of pks
-                pks = [str(entry[pk_name]) for entry in ids]  # type: ignore
-                # for schema V2, the "id" is varchar, rewrite the expression
-                if self._schema_ver != "V1":
-                    pks = ['"' + pk + '"' for pk in pks]
+                pks = [primary_key_literal(entry[pk_name], self._schema_ver) for entry in ids]
 
                 # Delete by ids batch by batch(avoid too long expression)
                 logger.info(
@@ -549,10 +547,7 @@ class MilvusDataStore(DataStore):
                     # Query for the pk's of entries that match filter
                     res = self.col.query(filter)  # type: ignore
                     # Convert to list of pks
-                    pks = [str(entry[pk_name]) for entry in res]  # type: ignore
-                    # for schema V2, the "id" is varchar, rewrite the expression
-                    if self._schema_ver != "V1":
-                        pks = ['"' + pk + '"' for pk in pks]
+                    pks = [primary_key_literal(entry[pk_name], self._schema_ver) for entry in res]
                     # Check to see if there are valid pk's to delete, delete batch by batch(avoid too long expression)
                     while len(pks) > 0:  # type: ignore
                         batch_pks = pks[:batch_size]
@@ -580,26 +575,4 @@ class MilvusDataStore(DataStore):
         Returns:
             Optional[str]: The filter if valid, otherwise None.
         """
-        filters = []
-        # Go through all the fields and their values
-        for field, value in filter.dict().items():
-            # Check if the Value is empty
-            if value is not None:
-                # Convert start_date to int and add greater than or equal logic
-                if field == "start_date":
-                    filters.append(
-                        "(created_at >= " + str(to_unix_timestamp(value)) + ")"
-                    )
-                # Convert end_date to int and add less than or equal logic
-                elif field == "end_date":
-                    filters.append(
-                        "(created_at <= " + str(to_unix_timestamp(value)) + ")"
-                    )
-                # Convert Source to its string value and check equivalency
-                elif field == "source":
-                    filters.append("(" + field + ' == "' + str(value.value) + '")')
-                # Check equivalency of rest of string fields
-                else:
-                    filters.append("(" + field + ' == "' + str(value) + '")')
-        # Join all our expressions with `and``
-        return " and ".join(filters)
+        return metadata_expression(filter)

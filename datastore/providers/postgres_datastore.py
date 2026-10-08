@@ -3,7 +3,7 @@ from typing import Any, List
 from datetime import datetime
 import numpy as np
 
-from psycopg2 import connect
+from psycopg2 import connect, sql
 from psycopg2.extras import DictCursor
 from pgvector.psycopg2 import register_vector
 
@@ -47,7 +47,7 @@ class PostgresClient(PGClient):
                 json["created_at"] = datetime.now()
             json["embedding"] = np.array(json["embedding"])
             cur.execute(
-                f"INSERT INTO {table} (id, content, embedding, document_id, source, source_id, url, author, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET content = %s, embedding = %s, document_id = %s, source = %s, source_id = %s, url = %s, author = %s, created_at = %s",
+                sql.SQL("INSERT INTO {} (id, content, embedding, document_id, source, source_id, url, author, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET content = %s, embedding = %s, document_id = %s, source = %s, source_id = %s, url = %s, author = %s, created_at = %s").format(sql.Identifier(table)),
                 (
                     json["id"],
                     json["content"],
@@ -91,7 +91,7 @@ class PostgresClient(PGClient):
         """
         with self.client.cursor() as cur:
             cur.execute(
-                f"DELETE FROM {table} WHERE {column} LIKE %s",
+                sql.SQL("DELETE FROM {} WHERE {} LIKE %s").format(sql.Identifier(table), sql.Identifier(column)),
                 (f"%{pattern}%",),
             )
             self.client.commit()
@@ -100,9 +100,11 @@ class PostgresClient(PGClient):
         """
         Deletes rows in the table that match the ids.
         """
+        if not ids:
+            return
         with self.client.cursor() as cur:
             cur.execute(
-                f"DELETE FROM {table} WHERE {column} IN %s",
+                sql.SQL("DELETE FROM {} WHERE {} IN %s").format(sql.Identifier(table), sql.Identifier(column)),
                 (tuple(ids),),
             )
             self.client.commit()
@@ -112,21 +114,26 @@ class PostgresClient(PGClient):
         Deletes rows in the table that match the filter.
         """
 
-        filters = "WHERE"
-        if filter.document_id:
-            filters += f" document_id = '{filter.document_id}' AND"
-        if filter.source:
-            filters += f" source = '{filter.source}' AND"
-        if filter.source_id:
-            filters += f" source_id = '{filter.source_id}' AND"
-        if filter.author:
-            filters += f" author = '{filter.author}' AND"
-        if filter.start_date:
-            filters += f" created_at >= '{filter.start_date}' AND"
-        if filter.end_date:
-            filters += f" created_at <= '{filter.end_date}' AND"
-        filters = filters[:-4]
+        conditions = []
+        values = []
+        for field in ("document_id", "source", "source_id", "author", "start_date", "end_date"):
+            value = getattr(filter, field)
+            if value is None:
+                continue
+            column = "created_at" if field in ("start_date", "end_date") else field
+            operator = ">=" if field == "start_date" else "<=" if field == "end_date" else "="
+            conditions.append(sql.SQL("{} {} %s").format(sql.Identifier(column), sql.SQL(operator)))
+            values.append(value.value if field == "source" else value)
+
+        # Deleting everything requires the separate, explicit delete_all operation.
+        if not conditions:
+            raise ValueError("At least one deletion filter is required")
 
         with self.client.cursor() as cur:
-            cur.execute(f"DELETE FROM {table} {filters}")
+            cur.execute(
+                sql.SQL("DELETE FROM {} WHERE {}").format(
+                    sql.Identifier(table), sql.SQL(" AND ").join(conditions)
+                ),
+                tuple(values),
+            )
             self.client.commit()
