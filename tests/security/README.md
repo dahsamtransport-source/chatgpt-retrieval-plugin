@@ -9,6 +9,8 @@ object and separate bound values. The Milvus encoder is tested without a server.
 These 22 passing tests establish local boundary behavior, not provider integration.
 The local isolated Python 3.12 test environment uses Pydantic 1 and FastAPI 0.92;
 some helper packages are newer than the old application lockfile.
+The CI job installs this same focused environment from requirements.txt; it does
+not install or certify every provider in the production Poetry lockfile.
 
 The fix parameterizes all PostgreSQL delete filters, quotes dynamic identifiers,
 and rejects empty filters. Milvus/Zilliz inherited search/delete filters and IDs

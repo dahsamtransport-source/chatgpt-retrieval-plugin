@@ -1,0 +1,16 @@
+# Isolated boundary-test environment, not the production/provider dependency lock.
+fastapi==0.92.0
+pydantic==1.10.26
+psycopg2-binary==2.9.13
+pgvector==0.5.0
+numpy==2.5.3
+arrow==1.4.0
+tenacity==9.2.1
+loguru==0.7.3
+openai==0.28.1
+tiktoken==0.14.0
+PyPDF2==3.0.1
+docx2txt==0.9
+python-pptx==1.0.2
+pytest==9.1.1
+pytest-asyncio==1.4.0
