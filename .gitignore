@@ -139,3 +139,7 @@ dmypy.json
 
 # macOS .DS_Store files
 .DS_Store
+
+# Local Graphify knowledge graphs and isolated Python environment
+graphify-out/
+.graphify-venv/
