@@ -68,7 +68,7 @@ async def upsert_file(
         return UpsertResponse(ids=ids)
     except Exception as e:
         logger.error(e)
-        raise HTTPException(status_code=500, detail=f"str({e})")
+        raise HTTPException(status_code=500, detail="Internal Service Error")
 
 
 @app.post(
