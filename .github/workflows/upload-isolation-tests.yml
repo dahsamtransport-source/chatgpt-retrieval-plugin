@@ -1,0 +1,30 @@
+name: Synthetic upload isolation tests
+on:
+  pull_request:
+    paths:
+      - 'services/file.py'
+      - 'server/main.py'
+      - 'local_server/main.py'
+      - 'models/**'
+      - 'tests/test_upload_isolation.py'
+      - '.github/workflows/upload-isolation-tests.yml'
+permissions:
+  contents: read
+jobs:
+  upload-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install only parser and test dependencies from existing lock versions
+        run: |
+          python -m pip install 'fastapi==0.92.0' 'starlette==0.25.0' 'pydantic==1.10.13' 'anyio==4.2.0' 'PyPDF2==3.0.1' 'docx2txt==0.8' 'python-pptx==0.6.23' 'loguru==0.7.2' 'pytest==7.4.3' 'pytest-asyncio==0.20.3'
+      - name: Verify source syntax
+        run: python -m py_compile server/main.py local_server/main.py services/file.py
+      - name: Run request-local buffer tests (synthetic data only)
+        run: python -m pytest -q tests/test_upload_isolation.py
