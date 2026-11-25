@@ -1,4 +1,5 @@
 import os
+from hmac import compare_digest
 from typing import Optional
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, Depends, Body, UploadFile
@@ -21,11 +22,14 @@ from models.models import DocumentMetadata, Source
 
 bearer_scheme = HTTPBearer()
 BEARER_TOKEN = os.environ.get("BEARER_TOKEN")
-assert BEARER_TOKEN is not None
+if not BEARER_TOKEN or not BEARER_TOKEN.strip():
+    raise RuntimeError("BEARER_TOKEN must be configured and non-empty")
 
 
 def validate_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
-    if credentials.scheme != "Bearer" or credentials.credentials != BEARER_TOKEN:
+    if credentials.scheme.lower() != "bearer" or not compare_digest(
+        credentials.credentials.encode("utf-8"), BEARER_TOKEN.encode("utf-8")
+    ):
         raise HTTPException(status_code=401, detail="Invalid or missing token")
     return credentials
 
@@ -58,8 +62,8 @@ async def upsert_file(
             if metadata
             else DocumentMetadata(source=Source.file)
         )
-    except:
-        metadata_obj = DocumentMetadata(source=Source.file)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="Invalid document metadata") from None
 
     document = await get_document_from_file(file, metadata_obj)
 
@@ -67,8 +71,8 @@ async def upsert_file(
         ids = await datastore.upsert([document])
         return UpsertResponse(ids=ids)
     except Exception as e:
-        logger.error(e)
-        raise HTTPException(status_code=500, detail=f"str({e})")
+        logger.error("Datastore operation failed")
+        raise HTTPException(status_code=500, detail="Internal Service Error")
 
 
 @app.post(
@@ -82,7 +86,7 @@ async def upsert(
         ids = await datastore.upsert(request.documents)
         return UpsertResponse(ids=ids)
     except Exception as e:
-        logger.error(e)
+        logger.error("Datastore operation failed")
         raise HTTPException(status_code=500, detail="Internal Service Error")
 
 
@@ -99,7 +103,7 @@ async def query_main(
         )
         return QueryResponse(results=results)
     except Exception as e:
-        logger.error(e)
+        logger.error("Datastore operation failed")
         raise HTTPException(status_code=500, detail="Internal Service Error")
 
 
@@ -118,7 +122,7 @@ async def query(
         )
         return QueryResponse(results=results)
     except Exception as e:
-        logger.error(e)
+        logger.error("Datastore operation failed")
         raise HTTPException(status_code=500, detail="Internal Service Error")
 
 
@@ -142,7 +146,7 @@ async def delete(
         )
         return DeleteResponse(success=success)
     except Exception as e:
-        logger.error(e)
+        logger.error("Datastore operation failed")
         raise HTTPException(status_code=500, detail="Internal Service Error")
 
 
@@ -153,4 +157,4 @@ async def startup():
 
 
 def start():
-    uvicorn.run("server.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("server.main:app", host="0.0.0.0", port=8000, reload=False)
