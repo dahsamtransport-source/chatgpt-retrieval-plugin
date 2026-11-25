@@ -1,7 +1,7 @@
-import os
-from io import BufferedReader
+from io import BufferedReader, BytesIO
 from typing import Optional
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
+from starlette.concurrency import run_in_threadpool
 import mimetypes
 from PyPDF2 import PdfReader
 import docx2txt
@@ -87,31 +87,28 @@ def extract_text_from_file(file: BufferedReader, mimetype: str) -> str:
     return extracted_text
 
 
-# Extract text from a file based on its mimetype
-async def extract_text_from_form_file(file: UploadFile):
-    """Return the text content of a file."""
-    # get the file body from the upload file object
+# Keep uploads request-local. Limit compressed/input bytes before parsing.
+MAX_UPLOAD_BYTES = 16 * 1024 * 1024
+SUPPORTED_UPLOAD_TYPES = {
+    "application/pdf",
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
+
+
+async def extract_text_from_form_file(file: UploadFile) -> str:
     mimetype = file.content_type
-    logger.info(f"mimetype: {mimetype}")
-    logger.info(f"file.file: {file.file}")
-    logger.info("file: ", file)
-
-    file_stream = await file.read()
-
-    temp_file_path = "/tmp/temp_file"
-
-    # write the file to a temporary location
-    with open(temp_file_path, "wb") as f:
-        f.write(file_stream)
-
+    if mimetype not in SUPPORTED_UPLOAD_TYPES:
+        raise HTTPException(status_code=415, detail="Unsupported file type")
+    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds upload limit")
     try:
-        extracted_text = extract_text_from_filepath(temp_file_path, mimetype)
-    except Exception as e:
-        logger.error(e)
-        os.remove(temp_file_path)
-        raise e
-
-    # remove file from temp location
-    os.remove(temp_file_path)
-
-    return extracted_text
+        # Each request owns its buffer; blocking parsers run off the event loop.
+        return await run_in_threadpool(extract_text_from_file, BytesIO(data), mimetype)
+    except Exception:
+        logger.warning("Uploaded document could not be parsed")
+        raise HTTPException(status_code=422, detail="Unable to parse document") from None
