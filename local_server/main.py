@@ -74,8 +74,8 @@ async def upsert_file(
             if metadata
             else DocumentMetadata(source=Source.file)
         )
-    except:
-        metadata_obj = DocumentMetadata(source=Source.file)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="Invalid document metadata") from None
 
     document = await get_document_from_file(file, metadata_obj)
 
@@ -83,8 +83,8 @@ async def upsert_file(
         ids = await datastore.upsert([document])
         return UpsertResponse(ids=ids)
     except Exception as e:
-        logger.error(e)
-        raise HTTPException(status_code=500, detail=f"str({e})")
+        logger.error("Datastore operation failed")
+        raise HTTPException(status_code=500, detail="Internal Service Error")
 
 
 @app.post(
@@ -98,7 +98,7 @@ async def upsert(
         ids = await datastore.upsert(request.documents)
         return UpsertResponse(ids=ids)
     except Exception as e:
-        logger.error(e)
+        logger.error("Datastore operation failed")
         raise HTTPException(status_code=500, detail="Internal Service Error")
 
 
@@ -110,7 +110,7 @@ async def query_main(request: QueryRequest = Body(...)):
         )
         return QueryResponse(results=results)
     except Exception as e:
-        logger.error(e)
+        logger.error("Datastore operation failed")
         raise HTTPException(status_code=500, detail="Internal Service Error")
 
 
@@ -134,7 +134,7 @@ async def delete(
         )
         return DeleteResponse(success=success)
     except Exception as e:
-        logger.error(e)
+        logger.error("Datastore operation failed")
         raise HTTPException(status_code=500, detail="Internal Service Error")
 
 
